@@ -31,6 +31,7 @@ class GoogleTrendsTool(BaseTool):
     def _execute(self, keywords: List[str], timeframe: str, geo: str, save_format: str, include_related_queries: bool, include_geo_analysis: bool, include_seasonality: bool):
         pytrends = TrendReq(hl='en-US', tz=360, retries=3, backoff_factor=0.4)
         
+        combined_data = pd.DataFrame()
         report = ""
 
         for keyword in keywords:
@@ -42,6 +43,10 @@ class GoogleTrendsTool(BaseTool):
                 if data.empty:
                     report += f"No trending data found for '{keyword}'.\n"
                     continue
+
+                # Добавление данных в общий DataFrame
+                data['keyword'] = keyword
+                combined_data = pd.concat([combined_data, data.reset_index()], ignore_index=True)
 
                 report += self._generate_trend_report(data, keyword)
 
@@ -69,11 +74,11 @@ class GoogleTrendsTool(BaseTool):
         # Сохранение отчёта в выбранном формате
         filename_base = f"{'_'.join([k.replace(' ', '_') for k in keywords])}_trends_report"
         if save_format == 'csv':
-            return self._save_to_csv(data, f"{filename_base}.csv")
+            return self._save_to_csv(combined_data, f"{filename_base}.csv")
         elif save_format == 'json':
-            return self._save_to_json(data, f"{filename_base}.json")
+            return self._save_to_json(combined_data, f"{filename_base}.json")
         elif save_format == 'db':
-            return self._save_to_db(data, 'trends')
+            return self._save_to_db(combined_data, 'trends')
         else:
             return self._save_to_txt(report, f"{filename_base}.txt")
 
@@ -156,16 +161,14 @@ class GoogleTrendsTool(BaseTool):
         return f"Successfully saved report to {filename}."
 
     def _save_to_csv(self, data, filename):
-        data.to_csv(filename, index=True)
+        data.to_csv(filename, index=False)
         return f"Successfully saved report to {filename}."
 
     def _save_to_json(self, data, filename):
-        data.reset_index(inplace=True)
         data.to_json(filename, orient='records', date_format='iso')
         return f"Successfully saved data to {filename}."
 
     def _save_to_db(self, data, table_name):
         engine = create_engine('sqlite:///trends.db')
-        data.reset_index(inplace=True)
         data.to_sql(table_name, con=engine, if_exists='replace', index=False)
         return f"Data saved to database table '{table_name}'."
