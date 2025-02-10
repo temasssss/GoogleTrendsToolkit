@@ -1,4 +1,4 @@
-from superagi.tools.base_toolkit import BaseToolkit
+from superagi.tools.base_tool import BaseToolkit
 from google_trends_tool import GoogleTrendsTool
 
 class GoogleTrendsToolkit(BaseToolkit):
