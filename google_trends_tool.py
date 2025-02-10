@@ -36,7 +36,6 @@ class GoogleTrendsTool(BaseTool):
 
         for keyword in keywords:
             try:
-                # Построение запроса к Google Trends
                 pytrends.build_payload([keyword], timeframe=timeframe, geo=geo)
                 data = pytrends.interest_over_time()
 
@@ -44,35 +43,35 @@ class GoogleTrendsTool(BaseTool):
                     report += f"No trending data found for '{keyword}'.\n"
                     continue
 
-                # Добавление данных в общий DataFrame
-                data['keyword'] = keyword
-                combined_data = pd.concat([combined_data, data.reset_index()], ignore_index=True)
+                if combined_data.empty:
+                    combined_data = data[[keyword]].copy()
+                else:
+                    combined_data = combined_data.join(data[[keyword]], how='outer')
 
                 report += self._generate_trend_report(data, keyword)
 
-                # Анализ связанных запросов
                 if include_related_queries:
                     related_queries = pytrends.related_queries()
                     report += self._generate_related_queries_report(related_queries, keyword)
 
-                # Географический анализ
                 if include_geo_analysis:
                     geo_data = pytrends.interest_by_region(resolution='CITY', geo=geo)
                     report += self._generate_geo_report(geo_data, keyword)
 
-                # Анализ сезонности
                 if include_seasonality:
                     seasonality_data = self._analyze_seasonality(pytrends, keyword, geo)
                     report += self._generate_seasonality_report(seasonality_data, keyword)
 
-                # Добавление случайной задержки между запросами
                 time.sleep(random.uniform(2, 5))
 
             except Exception as e:
                 report += f"Error fetching data for '{keyword}': {str(e)}\n"
 
-        # Сохранение отчёта в выбранном формате
-        filename_base = f"{'_'.join([k.replace(' ', '_') for k in keywords])}_trends_report"
+        save_path = os.path.join('superagi', 'tools', 'external_tools', 'GoogleTrendsToolkit', 'reports')
+        if not os.path.exists(save_path):
+            os.makedirs(save_path)
+
+        filename_base = os.path.join(save_path, f"{'_'.join([k.replace(' ', '_') for k in keywords])}_trends_report")
         if save_format == 'csv':
             return self._save_to_csv(combined_data, f"{filename_base}.csv")
         elif save_format == 'json':
@@ -161,7 +160,7 @@ class GoogleTrendsTool(BaseTool):
         return f"Successfully saved report to {filename}."
 
     def _save_to_csv(self, data, filename):
-        data.to_csv(filename, index=False)
+        data.to_csv(filename, index=True)
         return f"Successfully saved report to {filename}."
 
     def _save_to_json(self, data, filename):
@@ -170,5 +169,5 @@ class GoogleTrendsTool(BaseTool):
 
     def _save_to_db(self, data, table_name):
         engine = create_engine('sqlite:///trends.db')
-        data.to_sql(table_name, con=engine, if_exists='replace', index=False)
+        data.to_sql(table_name, con=engine, if_exists='replace', index=True)
         return f"Data saved to database table '{table_name}'."
