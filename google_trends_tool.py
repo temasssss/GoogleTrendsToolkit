@@ -1,59 +1,51 @@
-from pytrends.request import TrendReq
+import os
 from superagi.tools.base_tool import BaseTool
+from pydantic import BaseModel, Field
+from typing import Type, Optional
+from superagi.resource_manager.file_manager import FileManager
+from pytrends.request import TrendReq
+
+class GoogleTrendsToolInput(BaseModel):
+    keyword: str = Field(..., description="The keyword to search trends for.")
+    timeframe: str = Field(default='now 7-d', description="Time range for trends (e.g., 'now 7-d', 'today 12-m').")
+    geo: str = Field(default='', description="Geographical location code (e.g., 'US', 'RU'). Leave empty for worldwide trends.")
+    store_report_in_file: bool = Field(default=True, description="True if the report should be stored in a file. False otherwise.")
 
 class GoogleTrendsTool(BaseTool):
-    name = "Google Trends Analyzer"
-    description = "Fetches trending search topics from Google Trends based on keywords."
+    """
+    Google Trends Tool
+    """
+    name: str = "Google Trends Tool"
+    args_schema: Type[BaseModel] = GoogleTrendsToolInput
+    description: str = "Fetches trending search topics from Google Trends based on keywords."
+    resource_manager: Optional[FileManager] = None
 
-    def __init__(self):
-        super().__init__()
-        self.pytrends = TrendReq(hl='en-US', tz=360)
+    def _execute(self, keyword: str, timeframe: str, geo: str, store_report_in_file: bool):
+        pytrends = TrendReq(hl='en-US', tz=360)
+        
+        # Построение запроса к Google Trends
+        pytrends.build_payload([keyword], timeframe=timeframe, geo=geo)
+        data = pytrends.interest_over_time()
 
-    def _run(self, keyword: str, timeframe: str = 'now 7-d', geo: str = '', category: int = 0):
-        """
-        Fetches trending topics for a given keyword.
+        if data.empty:
+            return f"No trending data found for '{keyword}'."
 
-        Args:
-            keyword (str): The keyword to search trends for.
-            timeframe (str): Time range for trends (default: 'now 7-d').
-            geo (str): Geographical location code (e.g., 'US', 'RU'). Default is worldwide.
-            category (int): Category code for more specific searches. Default is 0 (all).
+        report = self._generate_report(data, keyword)
 
-        Returns:
-            dict: Trending data for the given keyword.
-        """
-        try:
-            self.pytrends.build_payload([keyword], timeframe=timeframe, geo=geo, cat=category)
-            data = self.pytrends.interest_over_time()
-            if not data.empty:
-                trend_data = data[keyword].to_dict()
-                return {
-                    "status": "success",
-                    "keyword": keyword,
-                    "trend_data": trend_data
-                }
-            else:
-                return {
-                    "status": "no data",
-                    "message": f"No trending data found for '{keyword}'."
-                }
-        except Exception as e:
-            return {
-                "status": "error",
-                "message": str(e)
-            }
+        # Сохранение отчёта в файл, если указано
+        if store_report_in_file:
+            filename = f"{keyword.replace(' ', '_')}_trends_report.txt"
+            self.resource_manager.write_file(filename, report)
+            return f"Successfully wrote report to {filename}."
+        
+        return report
 
-    def _run_batch(self, keywords: list, timeframe: str = 'now 7-d', geo: str = '', category: int = 0):
-        """
-        Fetch trends for multiple keywords.
-
-        Args:
-            keywords (list): List of keywords to search.
-
-        Returns:
-            dict: Trending data for all keywords.
-        """
-        result = {}
-        for keyword in keywords:
-            result[keyword] = self._run(keyword, timeframe, geo, category)
-        return result
+    def _generate_report(self, data, keyword):
+        report = f"Trends Report for '{keyword}':\n\n"
+        report += "Date\t\tInterest\n"
+        report += "-" * 30 + "\n"
+        
+        for date, value in data[keyword].items():
+            report += f"{date.strftime('%Y-%m-%d')}\t{value}\n"
+        
+        return report
